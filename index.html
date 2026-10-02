@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tres en raya</title>
+<style>
+  :root {
+    --bg: #f4f7f8; --card: #ffffff; --text: #16323a; --muted: #5d7a82;
+    --line: #d5e2e5; --x: #0f8b8d; --o: #2563eb; --win: #fde68a; --accent: #0f8b8d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1a1e; --card: #16262b; --text: #e6f1f3; --muted: #93aeb5;
+      --line: #2a4047; --x: #2cc5c7; --o: #6b9bff; --win: #6b5a17; --accent: #2cc5c7;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; justify-content: center; padding: 24px 16px;
+  }
+  main { width: 100%; max-width: 420px; }
+  h1 { margin: 0 0 16px; font-size: 1.6rem; text-align: center; }
+  .panel {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px; margin-bottom: 14px;
+  }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 10px; }
+  .row > span { color: var(--muted); font-size: .9rem; min-width: 70px; }
+  .seg { display: flex; flex: 1; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    flex: 1; border: 0; background: transparent; color: var(--text);
+    padding: 8px 6px; font: inherit; font-size: .9rem; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .hidden { display: none !important; }
+  .score { display: grid; grid-template-columns: 1fr 1fr 1fr; text-align: center; }
+  .score b { display: block; font-size: 1.4rem; }
+  .score small { color: var(--muted); }
+  #status { text-align: center; font-weight: 600; min-height: 1.5em; margin: 4px 0 12px; }
+  #board {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    aspect-ratio: 1; width: 100%;
+  }
+  .cell {
+    border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+    font-size: clamp(2.5rem, 14vw, 4rem); font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; color: var(--text);
+    transition: background .15s;
+  }
+  .cell:hover:not(:disabled) { background: var(--bg); }
+  .cell:disabled { cursor: default; }
+  .cell.X { color: var(--x); }
+  .cell.O { color: var(--o); }
+  .cell.win { background: var(--win); }
+  .actions { display: flex; gap: 8px; margin-top: 14px; }
+  .actions button {
+    flex: 1; padding: 10px; border-radius: 8px; font: inherit; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  }
+  .actions button.secondary { background: transparent; color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tres en raya</h1>
+
+  <section class="panel">
+    <div class="row">
+      <span>Modo</span>
+      <div class="seg" id="mode">
+        <button data-v="pvp" class="on">2 jugadores</button>
+        <button data-v="cpu">Contra el sistema</button>
+      </div>
+    </div>
+    <div class="row cpu-only hidden">
+      <span>Dificultad</span>
+      <div class="seg" id="level">
+        <button data-v="easy">Fácil</button>
+        <button data-v="medium">Media</button>
+        <button data-v="hard" class="on">Imbatible</button>
+      </div>
+    </div>
+    <div class="row cpu-only hidden">
+      <span>Tú juegas</span>
+      <div class="seg" id="side">
+        <button data-v="X" class="on">X (empiezas)</button>
+        <button data-v="O">O (segundo)</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel score">
+    <div><small id="labelX">Jugador X</small><b id="scoreX">0</b></div>
+    <div><small>Empates</small><b id="scoreD">0</b></div>
+    <div><small id="labelO">Jugador O</small><b id="scoreO">0</b></div>
+  </section>
+
+  <div id="status"></div>
+  <div id="board"></div>
+
+  <div class="actions">
+    <button id="again">Nueva partida</button>
+    <button id="reset" class="secondary">Reiniciar marcador</button>
+  </div>
+</main>
+
+<script>
+  const LINES = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+    [0, 4, 8], [2, 4, 6],
+  ];
+
+  const state = {
+    mode: "pvp", level: "hard", human: "X",
+    board: Array(9).fill(null), turn: "X", over: false,
+    score: { X: 0, O: 0, D: 0 }, starter: "X", game: 0,
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const boardEl = $("board");
+  const cells = [];
+  for (let i = 0; i < 9; i++) {
+    const b = document.createElement("button");
+    b.className = "cell";
+    b.setAttribute("aria-label", `Casilla ${i + 1}`);
+    b.addEventListener("click", () => humanMove(i));
+    boardEl.appendChild(b);
+    cells.push(b);
+  }
+
+  function winner(board) {
+    for (const line of LINES) {
+      const [a, b, c] = line;
+      if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+        return { player: board[a], line };
+      }
+    }
+    return board.every(Boolean) ? { player: null, line: [] } : null;
+  }
+
+  const other = (p) => (p === "X" ? "O" : "X");
+  const empty = (board) => board.map((v, i) => (v ? -1 : i)).filter((i) => i >= 0);
+
+  // Minimax: +10 si gana `me`, -10 si gana el rival; la profundidad premia ganar antes y perder después.
+  function minimax(board, player, me, depth) {
+    const w = winner(board);
+    if (w) return w.player === me ? 10 - depth : w.player ? depth - 10 : 0;
+    let best = player === me ? -Infinity : Infinity;
+    for (const i of empty(board)) {
+      board[i] = player;
+      const s = minimax(board, other(player), me, depth + 1);
+      board[i] = null;
+      best = player === me ? Math.max(best, s) : Math.min(best, s);
+    }
+    return best;
+  }
+
+  function bestMove(board, me) {
+    let best = -Infinity, moves = [];
+    for (const i of empty(board)) {
+      board[i] = me;
+      const s = minimax(board, other(me), me, 1);
+      board[i] = null;
+      if (s > best) { best = s; moves = [i]; }
+      else if (s === best) moves.push(i);
+    }
+    return moves[Math.floor(Math.random() * moves.length)];
+  }
+
+  function cpuMove() {
+    const free = empty(state.board);
+    const random = free[Math.floor(Math.random() * free.length)];
+    const smartChance = { easy: 0.2, medium: 0.65, hard: 1 }[state.level];
+    return Math.random() < smartChance ? bestMove([...state.board], state.turn) : random;
+  }
+
+  const isCpuTurn = () => state.mode === "cpu" && state.turn !== state.human;
+
+  function play(i) {
+    if (state.over || state.board[i]) return;
+    state.board[i] = state.turn;
+    const w = winner(state.board);
+    if (w) {
+      state.over = true;
+      state.score[w.player || "D"]++;
+      w.line.forEach((j) => cells[j].classList.add("win"));
+    } else {
+      state.turn = other(state.turn);
+    }
+    render();
+    if (!state.over && isCpuTurn()) scheduleCpu();
+  }
+
+  function scheduleCpu() {
+    const game = state.game;
+    // Si se inicia otra partida mientras el sistema "piensa", se descarta la jugada pendiente.
+    setTimeout(() => { if (game === state.game) play(cpuMove()); }, 450);
+  }
+
+  function humanMove(i) {
+    if (isCpuTurn()) return;
+    play(i);
+  }
+
+  function name(p) {
+    if (state.mode === "pvp") return `Jugador ${p}`;
+    return p === state.human ? `Tú (${p})` : `Sistema (${p})`;
+  }
+
+  function render() {
+    state.board.forEach((v, i) => {
+      cells[i].textContent = v || "";
+      cells[i].classList.toggle("X", v === "X");
+      cells[i].classList.toggle("O", v === "O");
+      cells[i].disabled = Boolean(v) || state.over || isCpuTurn();
+    });
+    $("labelX").textContent = name("X");
+    $("labelO").textContent = name("O");
+    $("scoreX").textContent = state.score.X;
+    $("scoreO").textContent = state.score.O;
+    $("scoreD").textContent = state.score.D;
+
+    const w = winner(state.board);
+    let msg;
+    if (w && w.player) {
+      msg = state.mode === "cpu"
+        ? (w.player === state.human ? "¡Ganaste! 🎉" : "Ganó el sistema 🤖")
+        : `¡Ganó el ${name(w.player)}! 🎉`;
+    } else if (w) {
+      msg = "Empate 🤝";
+    } else {
+      msg = isCpuTurn() ? "El sistema está pensando…" : `Turno de ${name(state.turn)}`;
+    }
+    $("status").textContent = msg;
+  }
+
+  function newGame() {
+    state.board = Array(9).fill(null);
+    state.over = false;
+    state.game++;
+    // En 2 jugadores se alterna quién empieza; contra el sistema siempre empieza X.
+    state.turn = state.mode === "pvp" ? state.starter : "X";
+    if (state.mode === "pvp") state.starter = other(state.starter);
+    cells.forEach((c) => c.classList.remove("win"));
+    render();
+    if (isCpuTurn()) scheduleCpu();
+  }
+
+  function resetScore() {
+    state.score = { X: 0, O: 0, D: 0 };
+    state.starter = "X";
+    newGame();
+  }
+
+  function segmented(id, key) {
+    const el = $(id);
+    el.addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      el.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === btn));
+      state[key] = btn.dataset.v;
+      document.querySelectorAll(".cpu-only").forEach((r) => r.classList.toggle("hidden", state.mode !== "cpu"));
+      if (key === "level") return; // cambiar dificultad no reinicia la partida
+      resetScore();
+    });
+  }
+  segmented("mode", "mode");
+  segmented("level", "level");
+  segmented("side", "human");
+
+  $("again").addEventListener("click", newGame);
+  $("reset").addEventListener("click", resetScore);
+
+  newGame();
+</script>
+</body>
+</html>
