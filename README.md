@@ -13,3 +13,7 @@ Abre `index.html` en el navegador (doble clic).
   - **Imbatible:** usa minimax; como mucho puedes empatar.
 
 Incluye marcador de victorias y empates, resaltado de la línea ganadora, diseño adaptado al celular y modo oscuro.
+
+## Otros contenidos
+
+- [`validador_5ta/`](validador_5ta/): plantilla Excel para validar retenciones de renta de 5ta categoría (Perú), mensual y anual por tramos, para varios trabajadores.
